@@ -1,0 +1,214 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from keras.models import Sequential
+from keras.layers import Dense
+from keras.optimizers import Adam
+
+# Sample data generation with added BOD values
+data = {
+    'Influent_COD': [320, 310, 330, 300, 340, 325, 315, 310, 320, 330],
+    'Influent_BOD': [160, 155, 165, 150, 170, 163, 158, 155, 160, 165],  # Added BOD values (typically BOD is ~50% of COD)
+    'Influent_NH3_N': [22.3, 21.8, 23.0, 20.5, 23.5, 22.0, 21.2, 22.1, 22.0, 23.0],
+    'Influent_TN': [49.0, 48.5, 50.0, 47.5, 51.0, 49.5, 48.8, 49.2, 49.0, 50.0],
+    'Influent_TP': [3.45, 3.50, 3.60, 3.40, 3.70, 3.55, 3.45, 3.65, 3.50, 3.60],
+    'pH': [7.7, 7.6, 7.8, 7.5, 7.9, 7.6, 7.7, 7.8, 7.6, 7.8],
+    'Effluent_COD': [19.5, 18.0, 20.0, 17.5, 21.0, 19.0, 18.5, 19.0, 19.5, 20],
+    'Effluent_BOD': [8.0, 7.5, 8.5, 7.0, 9.0, 8.2, 7.8, 8.0, 8.2, 8.5],  # Added BOD effluent values
+    'Effluent_NH3_N': [0.10, 0.09, 0.11, 0.08, 0.12, 0.10, 0.09, 0.10, 0.10, 0.11],
+    'Effluent_TN': [8.67, 8.50, 9.00, 8.30, 9.50, 8.80, 8.60, 9.00, 8.67, 9.00],
+    'Effluent_TP': [0.12, 0.11, 0.13, 0.10, 0.14, 0.12, 0.11, 0.12, 0.12, 0.13],
+}
+
+# Create a DataFrame
+df = pd.DataFrame(data)
+
+# Calculate removal efficiencies including BOD
+df['COD_removal'] = ((df['Influent_COD'] - df['Effluent_COD']) / df['Influent_COD']) * 100
+df['BOD_removal'] = ((df['Influent_BOD'] - df['Effluent_BOD']) / df['Influent_BOD']) * 100
+df['NH3_N_removal'] = ((df['Influent_NH3_N'] - df['Effluent_NH3_N']) / df['Influent_NH3_N']) * 100
+df['TN_removal'] = ((df['Influent_TN'] - df['Effluent_TN']) / df['Influent_TN']) * 100
+df['TP_removal'] = ((df['Influent_TP'] - df['Effluent_TP']) / df['Influent_TP']) * 100
+
+# Features and target variables - now including BOD
+X = df[['Influent_COD', 'Influent_BOD', 'Influent_NH3_N', 'Influent_TN', 'Influent_TP', 'pH']]
+y = df[['Effluent_COD', 'Effluent_BOD', 'Effluent_NH3_N', 'Effluent_TN', 'Effluent_TP']]
+
+# Scale the features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Split into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(X_scaled, y.values, test_size=0.2, random_state=42)
+
+# Build the model - adjusted for additional input and output parameters
+model = Sequential()
+model.add(Dense(64, input_dim=X_train.shape[1], activation='relu'))
+model.add(Dense(32, activation='relu'))
+model.add(Dense(y_train.shape[1], activation='linear'))
+
+# Compile the model
+model.compile(loss='mean_squared_error', optimizer=Adam(learning_rate=0.01))
+
+# Train the model
+history = model.fit(X_train, y_train, epochs=200, batch_size=2,
+                   validation_split=0.2, verbose=0)
+
+# Make predictions
+y_pred = model.predict(X_test)
+
+# Create visualizations
+plt.figure(figsize=(20, 15))  # Made taller to accommodate additional plots
+
+# 1. Training Loss History
+plt.subplot(3, 2, 1)
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.title('Model Training History')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
+plt.legend()
+
+# 2. Removal Efficiencies including BOD
+plt.subplot(3, 2, 2)
+removal_means = [df['COD_removal'].mean(), df['BOD_removal'].mean(), df['NH3_N_removal'].mean(),
+                df['TN_removal'].mean(), df['TP_removal'].mean()]
+plt.bar(['COD', 'BOD', 'NH3-N', 'TN', 'TP'], removal_means)
+plt.title('Average Removal Efficiencies')
+plt.ylabel('Removal Efficiency (%)')
+
+# 3. Influent vs Effluent Concentrations - COD and BOD
+plt.subplot(3, 2, 3)
+plt.plot(df['Influent_COD'], label='Influent COD', marker='o')
+plt.plot(df['Effluent_COD'], label='Effluent COD', marker='s')
+plt.plot(df['Influent_BOD'], label='Influent BOD', marker='^')
+plt.plot(df['Effluent_BOD'], label='Effluent BOD', marker='d')
+plt.title('COD and BOD: Influent vs Effluent')
+plt.xlabel('Sample Number')
+plt.ylabel('Concentration (mg/L)')
+plt.legend()
+
+# 4. Influent vs Effluent Concentrations - Nutrients
+plt.subplot(3, 2, 4)
+parameters = ['NH3_N', 'TN', 'TP']
+for param in parameters:
+    plt.plot(df[f'Influent_{param}'], label=f'Influent {param}', marker='o')
+    plt.plot(df[f'Effluent_{param}'], label=f'Effluent {param}', marker='s')
+plt.title('Nutrient Parameters: Influent vs Effluent')
+plt.xlabel('Sample Number')
+plt.ylabel('Concentration (mg/L)')
+plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+
+# 5. COD/BOD Correlation
+plt.subplot(3, 2, 5)
+plt.scatter(df['Influent_COD'], df['Influent_BOD'], color='blue', label='Influent')
+plt.scatter(df['Effluent_COD'], df['Effluent_BOD'], color='red', label='Effluent')
+# Add linear regression lines
+inflow_fit = np.polyfit(df['Influent_COD'], df['Influent_BOD'], 1)
+outflow_fit = np.polyfit(df['Effluent_COD'], df['Effluent_BOD'], 1)
+plt.plot(df['Influent_COD'], np.polyval(inflow_fit, df['Influent_COD']), 'b--')
+plt.plot(df['Effluent_COD'], np.polyval(outflow_fit, df['Effluent_COD']), 'r--')
+plt.title('COD vs BOD Correlation')
+plt.xlabel('COD (mg/L)')
+plt.ylabel('BOD (mg/L)')
+plt.grid(True)
+plt.legend()
+
+# 6. Correlation Heatmap
+plt.subplot(3, 2, 6)
+correlation = df[['Influent_COD', 'Influent_BOD', 'Influent_NH3_N', 'Influent_TN', 'Influent_TP',
+                 'pH', 'COD_removal', 'BOD_removal', 'NH3_N_removal', 'TN_removal', 'TP_removal']].corr()
+sns.heatmap(correlation, annot=True, cmap='coolwarm', fmt='.2f', vmin=-1, vmax=1)
+plt.title('Parameter Correlations')
+
+plt.tight_layout()
+plt.show()
+
+# Calculate and plot BOD/COD ratio (important for biodegradability assessment)
+plt.figure(figsize=(10, 6))
+df['Influent_BOD_COD_Ratio'] = df['Influent_BOD'] / df['Influent_COD']
+df['Effluent_BOD_COD_Ratio'] = df['Effluent_BOD'] / df['Effluent_COD']
+plt.bar(range(len(df)), df['Influent_BOD_COD_Ratio'], width=0.4, label='Influent BOD/COD', alpha=0.7)
+plt.bar([x + 0.4 for x in range(len(df))], df['Effluent_BOD_COD_Ratio'], width=0.4, label='Effluent BOD/COD', alpha=0.7)
+plt.axhline(y=0.5, color='r', linestyle='--', label='Typical threshold for biodegradability')
+plt.title('BOD/COD Ratio (Biodegradability Indicator)')
+plt.xlabel('Sample Number')
+plt.ylabel('BOD/COD Ratio')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.show()
+
+# Print model performance metrics
+print("\nModel Performance Metrics:")
+mse = np.mean((y_test - y_pred) ** 2, axis=0)
+print("\nMean Squared Error for each parameter:")
+print(f"COD: {mse[0]:.4f}")
+print(f"BOD: {mse[1]:.4f}")
+print(f"NH3-N: {mse[2]:.4f}")
+print(f"TN: {mse[3]:.4f}")
+print(f"TP: {mse[4]:.4f}")
+
+# Calculate and print removal efficiencies
+print("\nAverage Removal Efficiencies:")
+print(f"COD: {df['COD_removal'].mean():.2f}%")
+print(f"BOD: {df['BOD_removal'].mean():.2f}%")
+print(f"NH3-N: {df['NH3_N_removal'].mean():.2f}%")
+print(f"TN: {df['TN_removal'].mean():.2f}%")
+print(f"TP: {df['TP_removal'].mean():.2f}%")
+
+# Function to predict effluent quality with new data
+def predict_effluent_quality(influent_cod, influent_bod, influent_nh3, influent_tn, influent_tp, ph):
+    """
+    Predict effluent quality based on input parameters
+    """
+    # Create input array with the provided parameters
+    input_data = np.array([[influent_cod, influent_bod, influent_nh3, influent_tn, influent_tp, ph]])
+
+    # Scale the input using the same scaler used for training
+    input_scaled = scaler.transform(input_data)
+
+    # Make prediction
+    prediction = model.predict(input_scaled)
+
+    # Return prediction results
+    return {
+        'Effluent_COD': prediction[0][0],
+        'Effluent_BOD': prediction[0][1],
+        'Effluent_NH3_N': prediction[0][2],
+        'Effluent_TN': prediction[0][3],
+        'Effluent_TP': prediction[0][4]
+    }
+
+# Example usage
+print("\nPrediction Example:")
+sample_prediction = predict_effluent_quality(
+    influent_cod=325,
+    influent_bod=162,
+    influent_nh3=22.5,
+    influent_tn=49.5,
+    influent_tp=3.55,
+    ph=7.7
+)
+print("Predicted Effluent Quality:")
+for param, value in sample_prediction.items():
+    print(f"{param}: {value:.2f} mg/L")
+
+# Calculate membrane fouling rate estimation (simplified)
+# This simplified approach assumes that BOD/COD ratio changes can indicate fouling potential
+plt.figure(figsize=(10, 6))
+df['Fouling_Indicator'] = (df['Influent_BOD'] / df['Influent_COD']) / (df['Effluent_BOD'] / df['Effluent_COD'])
+plt.plot(range(len(df)), df['Fouling_Indicator'], marker='o')
+plt.axhline(y=1, color='r', linestyle='--', label='No change in biodegradability')
+plt.title('Membrane Fouling Potential Indicator')
+plt.xlabel('Sample Number')
+plt.ylabel('Fouling Indicator (Influent vs Effluent BOD/COD ratio)')
+plt.grid(True)
+plt.legend()
+plt.show()
+
+print("\nMembrane Fouling Analysis:")
+print(f"Average fouling indicator: {df['Fouling_Indicator'].mean():.2f}")
+print(f"Higher values (>1) suggest increased fouling potential due to selective removal of biodegradable components")
